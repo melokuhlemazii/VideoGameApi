@@ -7,9 +7,14 @@ namespace VideoGameApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class VideoGameController(VideoGameDbContext context) : ControllerBase
+    public class VideoGameController : ControllerBase
     {
-        private readonly VideoGameDbContext _context = context;
+        private readonly VideoGameDbContext _context;
+
+        public VideoGameController(VideoGameDbContext context)
+        {
+            _context = context;
+        }
 
         [HttpGet]
         public async Task<ActionResult<List<VideoGame>>> GetVideoGames()
@@ -25,7 +30,13 @@ namespace VideoGameApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<VideoGame>> GetVideoGameById(int id)
         {
-            var game = await _context.VideoGames.FindAsync(id);
+            var game = await _context.VideoGames
+                .Include(g => g.VideoGameDetails)
+                .Include(g => g.Developer)
+                .Include(g => g.Publisher)
+                .Include(g => g.Genres)
+                .FirstOrDefaultAsync(g => g.Id == id);
+
             if (game is null)
                 return NotFound();
 
@@ -51,10 +62,19 @@ namespace VideoGameApi.Controllers
             if (game is null)
                 return NotFound();
 
+            // Update scalar properties and FK ids to avoid accidental inserts
             game.Title = updatedGame.Title;
             game.Platform = updatedGame.Platform;
-            game.Developer = updatedGame.Developer;
-            game.Publisher = updatedGame.Publisher;
+            game.DeveloperId = updatedGame.DeveloperId;
+            game.PublisherId = updatedGame.PublisherId;
+
+            // Optional: update genres by syncing ids if provided
+            if (updatedGame.Genres != null)
+            {
+                var genreIds = updatedGame.Genres.Select(g => g.Id).ToList();
+                var genres = await _context.Genres.Where(g => genreIds.Contains(g.Id)).ToListAsync();
+                game.Genres = genres;
+            }
 
             await _context.SaveChangesAsync();
 
